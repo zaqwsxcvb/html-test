@@ -503,9 +503,14 @@ function renderSearch(){
  document.querySelectorAll("#sres .sadd").forEach(b=>b.onclick=()=>directAdd(b.dataset.sid,b));
  $("s-more").classList.toggle("hidden",S.done||S.items.length===0);
  const hint=S.tag?`词条「${S.tag}」（bgm热度序）`:`关键词「${S.kw}」`;
+ let meta="";
+ if(S.tag&&S.totalPages){meta=` · 第 ${S.page}/${S.totalPages} 页 · ${S.done?`共 ${S.items.length} 条`:`约 ${S.totalPages*24} 条`}`;}
+ else if(!S.tag&&S.apiTotal){meta=` · 共 ${S.apiTotal} 条`;}
  $("s-cnt").innerHTML=list.length
-  ? `${hint} → <b>${list.length}</b> 条${S.done?"":" · 还有更多"}${$("s-year").value?`（年份过滤：${$("s-year").value}）`:""}`
+  ? `${hint} → <b>${list.length}</b> 条${meta}${S.done?"":" · 还有更多"}${$("s-year").value?`（年份过滤：${$("s-year").value}）`:""}`
   : `${hint} → 0 条：换个词再试（bgm 偶尔限流返回空，隔几秒重搜）。`;
+ if(!S.done&&S.tag&&S.totalPages){$("s-more").textContent=`加载更多（第 ${Math.min(S.page+1,S.totalPages)}/${S.totalPages} 页）`;}
+ else{$("s-more").textContent="加载更多";}
 }
 const DETAIL_CACHE={};
 async function getDetail(id){
@@ -516,6 +521,8 @@ async function getDetail(id){
 async function loadTagPage(page){
  if(!S.seen)S.seen=new Set();
  const html=await bgmFetch(`/anime/tag/${encodeURIComponent(S.tag)}?page=${page}`,"GET",null,true);
+ const pmax=Math.max(0,...[...html.matchAll(/[?&]page=(\d+)/g)].map(m=>parseInt(m[1],10)));
+ if(pmax>(S.totalPages||0))S.totalPages=pmax;
  const ids=[...html.matchAll(/id="item_(\d+)"/g)].map(m=>m[1]);
  const fresh=ids.filter(id=>!S.seen.has(id));
  if(!fresh.length){S.done=true;return;}
@@ -524,12 +531,13 @@ async function loadTagPage(page){
   const rs=await Promise.all(fresh.slice(i,i+6).map(id=>getDetail(id).catch(()=>null)));
   for(const d of rs){if(d)S.items.push(d);}
  }
+ if(S.totalPages&&page>=S.totalPages)S.done=true;
 }
 async function doSearch(reset){
  if(reset){
   const tag=$("s-tag").value.trim(), kw=$("s-kw").value.trim();
   if(!tag&&!kw){$("s-cnt").textContent="点下方词条云，或输入词条/关键词再搜";return;}
-  S={offset:0,items:[],tag:tag||null,kw:tag?"":kw,year:$("s-year").value,done:false,page:1,seen:new Set()};
+  S={offset:0,items:[],tag:tag||null,kw:tag?"":kw,year:$("s-year").value,done:false,page:1,seen:new Set(),totalPages:0,apiTotal:0};
   $("sres").innerHTML="";
  }
  $("s-go").disabled=true;$("s-go").textContent="搜索中…";
@@ -540,6 +548,7 @@ async function doSearch(reset){
    while(S.items.length<25 && !S.done && S.offset<600){
     const json=await bgmFetch(`/v0/search/subjects?limit=50&offset=${S.offset}`,"POST",
       {keyword:S.kw,filter:{type:[2]}});
+    S.apiTotal=json.total||0;
     const arr=json.data||[];
     if(!arr.length||S.offset>=(json.total||0))S.done=true;
     S.offset+=arr.length;
