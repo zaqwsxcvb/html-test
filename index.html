@@ -92,7 +92,7 @@ a{color:var(--acc2)}
 </head>
 <body>
 <header>
-<h1>🌸 娇娇的新番库 <span class="v">2026 女主向 · v16 白底封面版 · 词条搜索 · 一键入库 · 自动快照+状态文件</span></h1>
+<h1>🌸 娇娇的新番库 <span class="v">2026 女主向 · v17 白底封面版 · 词条热度流 · 一键入库 · 快照+状态文件</span></h1>
 <div class="stats" id="stats"></div>
 </header>
 <nav>
@@ -388,25 +388,36 @@ function renderStats(){
 const BGM="https://api.bgm.tv", LB="http://127.0.0.1:8765";
 const TAGCLOUD=["恋爱", "百合", "轻百合", "单女主", "大女主", "女主", "恶役", "恶役千金", "乙女向", "女性向", "圣女", "魔法少女", "智斗", "复仇", "美食", "职场", "游戏", "运动", "历史", "童话", "恋爱喜剧", "贴贴", "甜水", "乙游", "凤傲天", "退婚", "灵魂互换", "偶像", "侦探", "侠义", "王道", "转生", "穿越", "异世界", "校园", "青春", "日常", "治愈", "搞笑", "奇幻", "战斗", "冒险", "科幻", "喜剧", "剧情", "悬疑", "超能力", "音乐", "后宫", "热血", "机战", "乡村", "料理"];
 let S_MODE=localStorage.getItem("s_mode")||"";
-async function bgmFetch(path, method, body){
- const order = S_MODE==="proxy" ? [[LB,"proxy"],[BGM,"direct"]] : [[BGM,"direct"],[LB,"proxy"]];
+window.__NET=window.__NET||[];
+async function bgmFetch(path, method, body, asText){
+ const order = asText ? [[LB,"proxy"]] : [[BGM,"direct"],[LB,"proxy"]];
+ const limit = asText ? 20000 : 12000;
+ const tries = 2;
  let lastErr=null;
- for(const [base,mode] of order){
-  try{
-   const ctl=new AbortController(); const timer=setTimeout(()=>ctl.abort(),6000);
-   const r=await fetch(base+path,{method:method,headers:{"Content-Type":"application/json"},
-     body:body?JSON.stringify(body):undefined,signal:ctl.signal});
-   clearTimeout(timer);
-   if(r.ok){S_MODE=mode;try{localStorage.setItem("s_mode",mode);}catch(e){}return await r.json();}
-   lastErr=new Error("HTTP "+r.status);
-  }catch(e){lastErr=e;}
+ for(let round=0; round<2; round++){
+  if(round>0) await new Promise(r=>setTimeout(r,2500));
+  for(const [base,mode] of order){
+   for(let a=0;a<tries;a++){
+    try{
+     const ctl=new AbortController(); const timer=setTimeout(()=>ctl.abort(),limit);
+     const r=await fetch(base+path,{method:method,headers:{"Content-Type":"application/json"},
+       body:body?JSON.stringify(body):undefined,signal:ctl.signal});
+     clearTimeout(timer);
+     if(r.ok){try{localStorage.setItem("s_mode",mode);}catch(e){}
+      return asText?await r.text():await r.json();}
+     lastErr=new Error("HTTP "+r.status);
+    }catch(e){lastErr=e;}
+    try{window.__NET.push(mode+" "+path+" r"+round+"a"+a+" -> "+(lastErr&&lastErr.message));}catch(x){}
+   }
+  }
  }
  throw lastErr||new Error("network");
 }
-let S={offset:0,items:[],kw:"",tag:null,year:"",done:false};
+let S={offset:0,items:[],kw:"",tag:null,year:"",done:false,page:1,seen:null};
 function sScore(it){return (it.rating&&it.rating.score!=null)?it.rating.score:(it.score!=null?it.score:null);}
 function sSorted(){
- const m=$("s-sort").value, a=[...S.items];
+ const m=$("s-sort").value; let a=[...S.items];
+ const yv=$("s-year").value; if(yv){a=a.filter(x=>yv==="更早"?(x.date&&x.date<"2015"):(x.date||"").startsWith(yv));}
  if(m==="date")a.sort((x,y)=>(y.date||"").localeCompare(x.date||""));
  else if(m==="datea")a.sort((x,y)=>(x.date||"").localeCompare(y.date||""));
  else if(m==="score")a.sort((x,y)=>((sScore(y)??-1)-(sScore(x)??-1)));
@@ -443,7 +454,7 @@ async function loadDetail(sid){
  if(!box)return;
  box.classList.remove("hidden");box.innerHTML="加载详情…";
  try{
-  const d=await bgmFetch(`/v0/subjects/${sid}`,"GET");
+  const d=await getDetail(sid);
   const tags=(d.tags||[]).map(t=>`<span class="tag" data-tag="${t.name}">${t.name}${t.count?` ·${t.count}`:""}</span>`).join("");
   const ib={};for(const x of (d.infobox||[])){ib[x.key]=Array.isArray(x.value)?x.value.map(v=>v.v||v).join(" / "):x.value;}
   const sum=(d.summary||"").replace(/</g,"&lt;").replace(/\n/g,"<br>");
@@ -458,7 +469,7 @@ async function directAdd(sid, btn){
  if(DATA.some(d=>d.bgm&&String(d.bgm.id)===String(sid))){btn.textContent="✓ 已在库";btn.classList.add("on");btn.disabled=true;return;}
  btn.disabled=true;btn.textContent="入库中…(抓详情)";
  try{
-  const d=await bgmFetch(`/v0/subjects/${sid}`,"GET");
+  const d=await getDetail(sid);
   const ib={};for(const x of (d.infobox||[])){ib[x.key]=Array.isArray(x.value)?x.value.map(v=>v.v||v).join(" / "):x.value;}
   const META=/^(19|20)\d{2}$|^\d{4}年$|^(TV|TVA|OVA|OAD|剧场版|WEB|日本|中国|美国|韩国|原创|全年龄)$|^\d{1,2}月$|改$|动画|制作|[Ss]tudio/;
   const genres=(d.tags||[]).map(t=>t.name).filter(t=>!META.test(t)&&t.length<=8).slice(0,8).join(" · ");
@@ -491,34 +502,56 @@ function renderSearch(){
  document.querySelectorAll("#sres .sdet").forEach(b=>b.onclick=()=>loadDetail(b.dataset.sid));
  document.querySelectorAll("#sres .sadd").forEach(b=>b.onclick=()=>directAdd(b.dataset.sid,b));
  $("s-more").classList.toggle("hidden",S.done||S.items.length===0);
- const hint=S.tag?`词条「${S.tag}」`:`关键词「${S.kw}」`;
+ const hint=S.tag?`词条「${S.tag}」（bgm热度序）`:`关键词「${S.kw}」`;
  $("s-cnt").innerHTML=list.length
-  ? `${hint} → <b>${list.length}</b> 条${S.done?"":" · 还有更多"}${S.year?`（年份过滤：${S.year}）`:""}`
+  ? `${hint} → <b>${list.length}</b> 条${S.done?"":" · 还有更多"}${$("s-year").value?`（年份过滤：${$("s-year").value}）`:""}`
   : `${hint} → 0 条：换个词再试（bgm 偶尔限流返回空，隔几秒重搜）。`;
+}
+const DETAIL_CACHE={};
+async function getDetail(id){
+ if(DETAIL_CACHE[id])return DETAIL_CACHE[id];
+ const d=await bgmFetch(`/v0/subjects/${id}`,"GET");
+ DETAIL_CACHE[id]=d;return d;
+}
+async function loadTagPage(page){
+ if(!S.seen)S.seen=new Set();
+ const html=await bgmFetch(`/anime/tag/${encodeURIComponent(S.tag)}?page=${page}`,"GET",null,true);
+ const ids=[...html.matchAll(/id="item_(\d+)"/g)].map(m=>m[1]);
+ const fresh=ids.filter(id=>!S.seen.has(id));
+ if(!fresh.length){S.done=true;return;}
+ fresh.forEach(id=>S.seen.add(id));
+ for(let i=0;i<fresh.length;i+=6){
+  const rs=await Promise.all(fresh.slice(i,i+6).map(id=>getDetail(id).catch(()=>null)));
+  for(const d of rs){if(d)S.items.push(d);}
+ }
 }
 async function doSearch(reset){
  if(reset){
   const tag=$("s-tag").value.trim(), kw=$("s-kw").value.trim();
   if(!tag&&!kw){$("s-cnt").textContent="点下方词条云，或输入词条/关键词再搜";return;}
-  S={offset:0,items:[],tag:tag||null,kw:tag?"":kw,year:$("s-year").value,done:false};
+  S={offset:0,items:[],tag:tag||null,kw:tag?"":kw,year:$("s-year").value,done:false,page:1,seen:new Set()};
   $("sres").innerHTML="";
  }
  $("s-go").disabled=true;$("s-go").textContent="搜索中…";
  try{
-  while(S.items.length<25 && !S.done && S.offset<600){
-   const body=S.tag?{keyword:" ",filter:{tag:[S.tag],type:[2]}}:{keyword:S.kw,filter:{type:[2]}};
-   const json=await bgmFetch(`/v0/search/subjects?limit=50&offset=${S.offset}`,"POST",body);
-   const arr=json.data||[];
-   if(!arr.length||S.offset>=(json.total||0))S.done=true;
-   S.offset+=arr.length;
-   let f=arr;
-   if(S.year==="更早")f=arr.filter(x=>x.date&&x.date<"2015");
-   else if(S.year)f=arr.filter(x=>(x.date||"").startsWith(S.year));
-   S.items.push(...f);
+  if(S.tag){
+   await loadTagPage(S.page||1);
+  }else{
+   while(S.items.length<25 && !S.done && S.offset<600){
+    const json=await bgmFetch(`/v0/search/subjects?limit=50&offset=${S.offset}`,"POST",
+      {keyword:S.kw,filter:{type:[2]}});
+    const arr=json.data||[];
+    if(!arr.length||S.offset>=(json.total||0))S.done=true;
+    S.offset+=arr.length;
+    let f=arr;
+    if(S.year==="更早")f=arr.filter(x=>x.date&&x.date<"2015");
+    else if(S.year)f=arr.filter(x=>(x.date||"").startsWith(S.year));
+    S.items.push(...f);
+   }
   }
   renderSearch();
  }catch(e){
-  $("s-cnt").innerHTML=`<span style="color:#c0392b">搜索失败：直连和本地代理都没通。</span> 请用桌面「启动新番库」打开（内置代理），或稍后再试。`;
+  $("s-cnt").innerHTML=`<span style="color:#c0392b">搜索失败：网络抖了（直连和代理都没赶上）。</span> 等几秒再点一次搜索就好；一直不行就用桌面「启动新番库」打开。`;
  }finally{
   $("s-go").disabled=false;$("s-go").textContent="🔍 搜全历史";
  }
@@ -529,8 +562,8 @@ $("s-go").onclick=()=>doSearch(true);
 $("s-tag").onkeydown=e=>{if(e.key==="Enter"){$("s-kw").value="";doSearch(true);}};
 $("s-kw").onkeydown=e=>{if(e.key==="Enter"){$("s-tag").value="";doSearch(true);}};
 $("s-sort").oninput=()=>{if(S.items.length)renderSearch();};
-$("s-year").oninput=()=>{if(S.items.length)doSearch(true);};
-$("s-more").onclick=()=>doSearch(false);
+$("s-year").oninput=()=>{if(!S.items.length)return;if(S.tag){renderSearch();}else{doSearch(true);}};
+$("s-more").onclick=()=>{if(S.tag){S.page=(S.page||1)+1;}doSearch(false);};
 document.querySelectorAll("nav button").forEach(b=>b.onclick=()=>{
  document.querySelectorAll("nav button").forEach(x=>x.classList.remove("on"));b.classList.add("on");
  ["cards","table","radar","search","about"].forEach(t=>$("pane-"+t).classList.toggle("hidden",t!==b.dataset.tab));
