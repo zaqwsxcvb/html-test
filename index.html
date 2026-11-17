@@ -60,7 +60,7 @@ tr:nth-child(even) td{background:#fafbfe}
 a{color:var(--acc2)}
 .bar{height:8px;background:#e9ebf3;border-radius:5px;overflow:hidden}
 .bar i{display:block;height:100%;background:linear-gradient(90deg,#6c5ce7,#e75480)}
-.rrow{display:flex;align-items:center;gap:14px;padding:12px 14px;border-bottom:1px solid var(--line);font-size:14px;background:#fff}
+.rrow{display:flex;align-items:center;gap:14px;padding:12px 14px;border-bottom:1px solid var(--line);font-size:14px;background:#fff;content-visibility:auto;contain-intrinsic-size:auto 80px}
 .rrow:nth-child(even){background:#fafbfe}
 .rrow:hover{background:#f0f4ff}
 .rrow .thumb{width:40px;height:56px;object-fit:cover;border-radius:6px;background:#eceef4;flex:none}
@@ -130,7 +130,7 @@ a{color:var(--acc2)}
   <label>关键词<input id="r-kw" placeholder="搜番名/标签…"></label>
   <label>季度<select id="r-season"><option value="">全部</option><option>冬季</option><option>春季</option><option>夏季</option><option>秋季</option></select></label>
   <label>女主词条<select id="r-flag"><option value="hb" selected>bgm女主·百合词条</option><option value="">全部库外</option></select></label>
-  <label>排序<select id="r-sort"><option value="score">bgm评分</option><option value="date">首播</option></select></label>
+  <label>排序<select id="r-sort"><option value="date" selected>首播 新→旧</option><option value="score">bgm评分</option></select></label>
  </div>
  <div class="count" id="r-cnt"></div>
  <div id="wishbar" class="hidden"></div>
@@ -142,7 +142,7 @@ a{color:var(--acc2)}
   <label>&nbsp;<button id="s-go" class="wbtn" style="padding:9px 20px">🔍 搜全历史</button></label>
   <label>关键词（可选，知道番名时）<input id="s-kw" placeholder="子串匹配，任意片段"></label>
   <label>年份<select id="s-year"><option value="">全部年代</option><option>2026</option><option>2025</option><option>2024</option><option>2023</option><option>2022</option><option>2021</option><option>2020</option><option>2019</option><option>2018</option><option>2017</option><option>2016</option><option>2015</option><option>更早</option></select></label>
-  <label>排序<select id="s-sort"><option value="def">bgm默认</option><option value="date">首播 新→旧</option><option value="datea">首播 旧→新</option><option value="score">评分 高→低</option><option value="scorea">评分 低→高</option></select></label>
+  <label>排序<select id="s-sort"><option value="date" selected>首播 新→旧</option><option value="datea">首播 旧→新</option><option value="score">评分 高→低</option><option value="scorea">评分 低→高</option><option value="def">bgm热度</option></select></label>
  </div>
  <div class="tags" id="s-cloud" style="margin-bottom:12px"></div>
  <div class="count" id="s-cnt">点词条云或输词条搜 bangumi <b>全历史</b>；展开看简介和全部词条；看中点「<b>＋入库</b>」→ 信息自动抓全直接进卡墙（契合度不评、状态默认未定），<b>备注在卡墙卡片右下的输入框里补</b>，自动保存。搜索走本机代理，每次约几秒到十几秒。</div>
@@ -225,7 +225,7 @@ function getMemo(it){const v=localStorage.getItem(savedKey(it.id,'memo'));if(v!=
 function setStatus(it,v){localStorage.setItem(savedKey(it.id,'status'),v);queueStateSave();}
 function setMemo(it,v){localStorage.setItem(savedKey(it.id,'memo'),v);queueStateSave();}
 function cover(it,cls){
- if(it.img) return `<img class="${cls}" src="${it.img}" alt="" onerror="this.style.display='none'">`;
+ if(it.img) return `<img loading="lazy" decoding="async" class="${cls}" src="${it.img}" alt="" onerror="this.style.display='none'">`;
  return `<div class="coverph">暂无封面</div>`;
 }
 function pass(it){
@@ -297,7 +297,7 @@ function renderCards(){
 function renderTable(){
  const list=sortList(DATA.filter(pass));
  $("tbl").querySelector("tbody").innerHTML=list.map(it=>`<tr>
-  <td>${it.img?`<img class="tblthumb" src="${it.img}" onerror="this.style.display='none'">`:""}</td>
+  <td>${it.img?`<img loading="lazy" decoding="async" class="tblthumb" src="${it.img}" onerror="this.style.display='none'">`:""}</td>
   <td>${it.season}</td><td><b>${it.title}</b></td><td style="max-width:340px">${it.synopsis}</td>
   <td>${it.protagonist_type}</td><td>${it.emotion}</td>
   <td><span class="b b-fit-${it.fit}">${it.fit}</span></td><td>${it.ai_fit}%</td>
@@ -348,6 +348,7 @@ function hbChips(r){
  if(!r.hb) return "";
  return (r.hbt||[]).map(t=>`<span class="sigchip" title="bangumi 条目标签">${t}</span>`).join("");
 }
+function debounce(fn,ms){let t;return function(...a){clearTimeout(t);t=setTimeout(()=>fn.apply(null,a),ms);};}
 function renderRoster(){
  const kw=$("r-kw").value.trim().toLowerCase(), se=$("r-season").value, fl=$("r-flag").value;
  let list=ROSTER.filter(r=>{
@@ -357,18 +358,18 @@ function renderRoster(){
   return true;
  });
  const sm=$("r-sort").value;
- list.sort((a,b)=> sm==="date" ? (a.date||"").localeCompare(b.date||"") : (b.score||-1)-(a.score||-1));
+ list.sort((a,b)=> sm==="date" ? (b.date||"").localeCompare(a.date||"") : (b.score||-1)-(a.score||-1));
  const hbN=ROSTER.filter(r=>r.hb).length;
  $("r-cnt").textContent=`${list.length} 部显示 · bgm女主·百合词条 ${hbN} 部 / 库外全量 ${ROSTER.length} 部（口径：女主近义词条 ∪ 百合相关；恋爱/乙女向/女性向不入——可能混男性主角或BL）`;
  $("rlist").innerHTML=list.map(r=>`<div class="rrow">
-   ${r.img?`<img class="thumb" src="${r.img}" onerror="this.style.display='none'">`:'<div class="thumb"></div>'}
+   ${r.img?`<img loading="lazy" decoding="async" class="thumb" src="${r.img}" onerror="this.style.display='none'">`:'<div class="thumb"></div>'}
    <span class="b b-season">${r.season}</span>
    <span class="t"><a href="https://bgm.tv/subject/${r.id}" target="_blank" rel="noopener"><b>${r.name_cn||r.name}</b></a>
     ${hbChips(r)}<br><span style="color:var(--mut);font-size:12.5px"> ${(r.tags||[]).slice(0,6).join(" / ")}</span></span>
    <span class="dt">${r.date||""}</span>
    <span class="sc">${r.score??"—"}</span>
    <button class="wishbtn${WISH.includes(r.id)?" on":""}" data-id="${r.id}" title="加入入库清单">${WISH.includes(r.id)?"✓":"＋"}</button></div>`).join("");
- document.querySelectorAll("#rlist .wishbtn").forEach(el=>el.onclick=()=>toggleWish(el.dataset.id));
+ $("rlist").onclick=e=>{const b=e.target.closest(".wishbtn");if(b)toggleWish(b.dataset.id);};
  renderWish();
 }
 function renderStats(){
@@ -430,7 +431,7 @@ function sCard(it){
  const inLib=DATA.some(d=>d.bgm&&String(d.bgm.id)===String(it.id));
  return `<article class="card" data-sid="${it.id}">
   <div style="display:flex;gap:14px">
-   ${img?`<img class="cover" src="${img}" onerror="this.style.display='none'">`:'<div class="coverph">暂无封面</div>'}
+   ${img?`<img loading="lazy" decoding="async" class="cover" src="${img}" onerror="this.style.display='none'">`:'<div class="coverph">暂无封面</div>'}
    <div class="cbody">
     <div class="ct">${it.name_cn||it.name}</div>
     <div class="badges">
@@ -632,8 +633,9 @@ function renderAll(){renderCards();renderTable();renderRoster();}
 [...new Set(DATA.map(d=>d.protagonist_type))].forEach(v=>{const o=document.createElement("option");o.textContent=v;$("f-pro").appendChild(o);});
 STATUS.forEach(v=>{const o=document.createElement("option");o.textContent=v;$("f-status").appendChild(o);});
 ["f-season","f-pro","f-emo","f-fit","f-pov","f-status","f-score","sort"].forEach(id=>$(id).oninput=renderCards);
-$("kw").oninput=()=>{try{localStorage.setItem("jj_kw",$("kw").value);}catch(e){}renderCards();};
-["r-kw","r-season","r-sort","r-flag"].forEach(id=>$(id).oninput=renderRoster);
+function kwInput(){try{localStorage.setItem("jj_kw",$("kw").value);}catch(e){}renderCards();}
+$("kw").oninput=debounce(kwInput,160);
+$("r-kw").oninput=debounce(renderRoster,160);["r-season","r-sort","r-flag"].forEach(id=>$(id).oninput=renderRoster);
 document.querySelectorAll("#tbl th[data-k]").forEach(th=>th.onclick=()=>{$("sort").value=({"premiere":"date"})[th.dataset.k]||"fit";renderTable();});
 try{$("kw").value=localStorage.getItem("jj_kw")||"";}catch(e){}
 renderStats();renderAll();
