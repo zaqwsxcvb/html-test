@@ -92,7 +92,7 @@ a{color:var(--acc2)}
 </head>
 <body>
 <header>
-<h1>🌸 娇娇的新番库 <span class="v">2026 女主向 · v20 零安装版 · 进度条 · 系列连锁 · 极速搜索</span></h1>
+<h1>🌸 娇娇的新番库 <span class="v">2026 女主向 · v21 零安装版 · 系列全家桶 · 进度条 · 极速搜索</span></h1>
 <div class="stats" id="stats"></div>
 </header>
 <nav>
@@ -301,9 +301,10 @@ function renderCards(){
      <span style="font-size:12.5px;color:var(--mut)">▶ 看到第 <b style="color:var(--accent)">${PROG[it.id]||0}</b>${epsOf(it)?"/"+epsOf(it):""} 话</span>
      <button class="wbtn" onclick="bumpProg('${it.id}',1)">＋1</button>
      <button class="wbtn" onclick="bumpProg('${it.id}',-1)">−</button>
-     ${(it.bgm&&it.bgm.id&&SERIES[String(it.bgm.id)])?seriesRow(SERIES[String(it.bgm.id)]):
+     ${(it.bgm&&it.bgm.id&&seriesOf(String(it.bgm.id)))?`<button class="wbtn" onclick="toggleSeriesPanel('sp-${it.id}',this)">🔗 系列（${seriesOf(String(it.bgm.id)).length}部）· 点开看全</button>`:
        (it.bgm&&it.bgm.id?`<button class="wbtn" onclick="findSeries('${it.bgm.id}')">🔗 查系列</button>`:"")}
     </div>
+    ${(it.bgm&&it.bgm.id&&seriesOf(String(it.bgm.id)))?seriesPanelHTML(it.id,String(it.bgm.id),seriesOf(String(it.bgm.id))):""}
    </div>
   </article>`;}).join("");
  if(!_epsWarm)warmEps();
@@ -460,7 +461,7 @@ function sCard(it){
     ${it.name_cn&&it.name?`<div style="color:var(--mut);font-size:12.5px">${it.name}</div>`:""}
     <div class="ctrl">
      <button class="wbtn sdet" data-sid="${it.id}">展开：简介 + 词条</button>
-     <button class="wbtn sadd${inLib?" on":""}" data-sid="${it.id}" ${inLib?"disabled":""}>${inLib?"✓ 已在库":"＋ 入库"}</button>
+     <button class="wbtn sadd${inLib?" on":""}" data-sid="${it.id}">${inLib?"✓ 已在库 · 补全系列":"＋ 入库"}</button>
     </div>
    </div>
   </div>
@@ -484,7 +485,6 @@ async function loadDetail(sid){
  }catch(e){box.innerHTML=`<span style="color:#c0392b">详情加载失败：${e&&e.message}（用桌面启动器打开有内置代理）</span>`;}
 }
 let PROG={};try{PROG=JSON.parse(localStorage.getItem("jj_prog_v1")||"{}");}catch(e){}
-let SERIES={};try{SERIES=JSON.parse(localStorage.getItem("jj_series_v1")||"{}");}catch(e){}
 function bumpProg(id,d){
  const cur=PROG[id]||0;PROG[id]=Math.max(0,cur+d);
  try{localStorage.setItem("jj_prog_v1",JSON.stringify(PROG));queueStateSave();}catch(e){}
@@ -494,20 +494,86 @@ function epsOf(it){
  const d=it&&it.bgm&&it.bgm.id&&DETAIL_CACHE[it.bgm.id];
  return (d&&d.eps)||null;
 }
-function seriesRow(members){
- return `<span style="display:inline-flex;gap:4px;align-items:center;vertical-align:middle;margin-left:8px"><span style="color:var(--mut);font-size:12px">系列：</span>`+
-  members.slice(0,10).map(m=>{
-   const inLib=DATA.some(d=>d.bgm&&String(d.bgm.id)===String(m.id));
-   return `<a href="https://bgm.tv/subject/${m.id}" target="_blank" rel="noopener" title="${(m.title||m.id)+(inLib?" · 已在库":"")}" style="display:inline-block;width:26px;height:36px;border-radius:4px;overflow:hidden;background:#eceef4;opacity:${inLib?1:.55}">${m.img?`<img loading="lazy" decoding="async" src="${m.img}" style="width:100%;height:100%;object-fit:cover">`:""}</a>`;
-  }).join("")+`</span>`;
+function loadSeries(){
+ try{
+  const raw=JSON.parse(localStorage.getItem("jj_series_v1")||"null");
+  if(!raw)return {groups:[],idx:{}};
+  if(raw.groups&&raw.idx)return raw;
+  const groups=[]; const seen=new Set();
+  for(const k of Object.keys(raw)){
+   if(seen.has(k))continue;
+   const grp=[{id:String(k),img:null,title:""}].concat((raw[k]||[]).map(x=>({id:String(x.id),img:x.img||null,title:x.title||""})));
+   grp.forEach(x=>seen.add(String(x.id)));
+   groups.push(grp);
+  }
+  const idx={};
+  groups.forEach((g,gi)=>g.forEach(x=>{idx[String(x.id)]=gi;}));
+  return {groups,idx};
+ }catch(e){return {groups:[],idx:{}};}
+}
+let SERIES=loadSeries();
+function seriesOf(id){const g=SERIES.idx[String(id)];return g!=null?SERIES.groups[g]:null;}
+function saveSeries(){
+ try{localStorage.setItem("jj_series_v1",JSON.stringify(SERIES));queueStateSave();}catch(e){}
+}
+function storeGroup(members){
+ const byId={};
+ const put=x=>{byId[String(x.id)]={id:String(x.id),img:x.img||null,title:x.title||""};};
+ members.forEach(put);
+ const gset=new Set();
+ for(const m of members){const g=SERIES.idx[String(m.id)];if(g!=null)gset.add(g);}
+ for(const g of gset){SERIES.groups[g].forEach(put);}
+ for(const g of [...gset].sort((a,b)=>b-a)){SERIES.groups.splice(g,1);}
+ const all=Object.values(byId);
+ SERIES.groups.push(all);
+ SERIES.idx={};
+ SERIES.groups.forEach((grp,gi)=>grp.forEach(x=>{SERIES.idx[String(x.id)]=gi;}));
+ saveSeries();
+ return all;
+}
+function toggleSeriesPanel(id,btn){
+ const el=document.getElementById(id);
+ if(!el)return;
+ el.classList.toggle("hidden");
+ if(el.classList.contains("hidden"))btn.textContent=btn.textContent.replace("收起系列","点开看全");
+ else btn.textContent=btn.textContent.replace("点开看全","收起系列");
+}
+async function addSeriesMember(mid,btn){
+ if(DATA.some(d=>d.bgm&&String(d.bgm.id)===String(mid))){btn.textContent="✓ 已在库";btn.disabled=true;return;}
+ btn.disabled=true;btn.textContent="入库中…";
+ try{
+  const d=await getDetail(mid);
+  persistAdded(entryFromDetail(mid,d));
+  renderAll();
+ }catch(e){btn.disabled=false;btn.textContent="＋入库(失败重试)";}
+}
+function seriesPanelHTML(cardId,selfId,group){
+ const gid="sp-"+cardId;
+ return `<div id="${gid}" class="hidden" style="margin-top:10px;padding:12px;background:#f7f8fc;border:1px solid var(--line);border-radius:12px">
+  <div style="display:flex;gap:14px;overflow-x:auto;padding-bottom:4px">
+   ${group.map(m=>{
+    const isSelf=String(m.id)===String(selfId);
+    const inLib=isSelf||DATA.some(d=>d.bgm&&String(d.bgm.id)===String(m.id));
+    return `<div style="flex:none;width:118px;text-align:center">
+     <a href="https://bgm.tv/subject/${m.id}" target="_blank" rel="noopener" title="去bgm看详情">
+      ${m.img?`<img loading="lazy" decoding="async" src="${m.img}" style="width:88px;height:124px;object-fit:cover;border-radius:8px;background:#eceef4;${isSelf?"outline:2px solid var(--accent)":""}">`:`<div style="width:88px;height:124px;background:#eceef4;border-radius:8px"></div>`}
+     </a>
+     <div style="font-size:11.5px;line-height:1.35;margin-top:5px;height:32px;overflow:hidden" title="${(m.title||"").replace(/"/g,"&quot;")}">${m.title||m.id}</div>
+     ${isSelf?`<span style="font-size:11px;color:var(--accent)">★ 本作</span>`:
+       (inLib?`<span style="font-size:11px;color:#2e7d32">✓ 已在库</span>`:`<button class="wbtn" style="font-size:11px;padding:2px 10px" onclick="addSeriesMember('${m.id}',this)">＋入库</button>`)}
+    </div>`;
+   }).join("")}
+  </div>
+ </div>`;
 }
 async function findSeries(bid){
  try{
   const members=await seriesClosure(bid);
-  const self={id:String(bid),img:((DETAIL_CACHE[bid]&&DETAIL_CACHE[bid].images)&&(DETAIL_CACHE[bid].images.medium||DETAIL_CACHE[bid].images.small))||null,title:""};
+  const se=DATA.find(d=>d.bgm&&String(d.bgm.id)===String(bid));
+  const selfImg=((DETAIL_CACHE[bid]&&DETAIL_CACHE[bid].images)&&(DETAIL_CACHE[bid].images.medium||DETAIL_CACHE[bid].images.small))||null;
+  const self={id:String(bid),img:selfImg,title:(se&&se.title)||((DETAIL_CACHE[bid]&&(DETAIL_CACHE[bid].name_cn||DETAIL_CACHE[bid].name))||"")};
   const all=[self,...members.map(m=>({id:String(m.id),img:(m.images&&(m.images.medium||m.images.small))||null,title:m.name_cn||m.name}))];
-  for(const x of all){SERIES[x.id]=all.filter(y=>y.id!==x.id);}
-  try{localStorage.setItem("jj_series_v1",JSON.stringify(SERIES));queueStateSave();}catch(e){}
+  storeGroup(all);
   renderCards();
  }catch(e){}
 }
@@ -520,7 +586,7 @@ async function getSeries(id){
 }
 async function seriesClosure(seedId){
  const seen=new Set([String(seedId)]); let frontier=[String(seedId)]; const members=[];
- for(let depth=0;depth<2&&frontier.length&&members.length<12;depth++){
+ for(let depth=0;depth<5&&frontier.length&&members.length<150;depth++){
   const next=[];
   for(const fid of frontier){
    let rel=[];
@@ -529,9 +595,9 @@ async function seriesClosure(seedId){
     const mid=String(m.id);
     if(seen.has(mid))continue;
     seen.add(mid); members.push(m); next.push(mid);
-    if(members.length>=12)break;
+    if(members.length>=150)break;
    }
-   if(members.length>=12)break;
+   if(members.length>=150)break;
   }
   frontier=next;
  }
@@ -561,31 +627,40 @@ function persistAdded(entry){
  try{localStorage.setItem("jj_added_v1",JSON.stringify(ADDED));queueStateSave();}catch(e){}
  DATA.push(entry);
 }
-async function chainAdd(sid){
+async function chainAdd(sid, btn){
  try{
   const members=await seriesClosure(sid);
   if(!members.length)return 0;
-  const all=[{id:String(sid),img:null,title:""},...members.map(m=>({id:String(m.id),img:(m.images&&(m.images.medium||m.images.small))||null,title:m.name_cn||m.name}))];
-  for(const x of all){SERIES[x.id]=all.filter(y=>y.id!==x.id);}
-  try{localStorage.setItem("jj_series_v1",JSON.stringify(SERIES));queueStateSave();}catch(e){}
+  const se=DATA.find(d=>d.bgm&&String(d.bgm.id)===String(sid));
+  const self={id:String(sid),img:(se&&se.img)||null,title:(se&&se.title)||""};
+  const all=[self,...members.map(m=>({id:String(m.id),img:(m.images&&(m.images.medium||m.images.small))||null,title:m.name_cn||m.name}))];
+  storeGroup(all);
+  const todo=members.filter(m=>!DATA.some(d=>d.bgm&&String(d.bgm.id)===String(m.id)));
   let added=0;
-  for(const m of members){
-   if(DATA.some(d=>d.bgm&&String(d.bgm.id)===String(m.id)))continue;
-   try{const d=await getDetail(m.id);persistAdded(entryFromDetail(m.id,d));added++;}catch(e){}
+  for(let i=0;i<todo.length;i+=8){
+   const rs=await Promise.all(todo.slice(i,i+8).map(m=>getDetail(m.id).then(d=>({m,d})).catch(()=>null)));
+   for(const r of rs){if(r){persistAdded(entryFromDetail(r.m.id,r.d));added++;}}
+   if(btn)btn.textContent=`入库中…系列 ${Math.min(i+8,todo.length)}/${todo.length}`;
   }
   if(added)renderAll();
   return added;
  }catch(e){return 0;}
 }
 async function directAdd(sid, btn){
- if(DATA.some(d=>d.bgm&&String(d.bgm.id)===String(sid))){btn.textContent="✓ 已在库";btn.classList.add("on");btn.disabled=true;return;}
+ if(DATA.some(d=>d.bgm&&String(d.bgm.id)===String(sid))){
+  btn.classList.add("on");btn.disabled=true;btn.textContent="✓ 已在库 · 补全系列中…";
+  const n=await chainAdd(sid,btn);
+  btn.disabled=false;
+  btn.textContent=n?`✓ 已在库 · 系列补入 ${n} 部（可再点刷新）`:"✓ 已在库 · 系列已全（可再点刷新）";
+  return;
+ }
  btn.disabled=true;btn.textContent="入库中…(抓详情)";
  try{
   const d=await getDetail(sid);
   persistAdded(entryFromDetail(sid,d));
   renderStats();
   btn.textContent="✓ 已入库 · 卡墙可见";btn.classList.add("on");
-  const n=await chainAdd(sid);
+  const n=await chainAdd(sid,btn);
   btn.textContent=n?`✓ 已入库 · 连同系列 ${n} 部`:"✓ 已入库 · 卡墙可见";
  }catch(e){
   btn.disabled=false;btn.textContent="入库失败，重试";
