@@ -92,7 +92,7 @@ a{color:var(--acc2)}
 </head>
 <body>
 <header>
-<h1>🌸 娇娇的新番库 <span class="v">2026 女主向 · v19.1 零安装版 · 全局排序(时间/评分) · 一键入库 · 快照+状态文件</span></h1>
+<h1>🌸 娇娇的新番库 <span class="v">2026 女主向 · v20 零安装版 · 进度条 · 系列连锁 · 极速搜索</span></h1>
 <div class="stats" id="stats"></div>
 </header>
 <nav>
@@ -187,7 +187,7 @@ function restoreUserState(){
 restoreUserState();
 let _stateTimer=null;
 function collectUserState(){
- const keys=["jj_wishlist_v1","jj_added_v1","jj_searched_v1","jj_kw","s_mode"];
+ const keys=["jj_wishlist_v1","jj_added_v1","jj_searched_v1","jj_kw","s_mode","jj_prog_v1","jj_series_v1"];
  const out={};
  for(const k of keys){const v=localStorage.getItem(k);if(v!==null)out[k]=v;}
  for(let i=0;i<localStorage.length;i++){
@@ -261,6 +261,15 @@ function bgmHtml(it){
  return `<span class="bgmchip"><span class="sc">★${it.bgm.score??"-"}</span>${it.bgm.rank?`<span>#${it.bgm.rank}</span>`:""}
  <a class="bgmlink" href="https://bgm.tv/subject/${it.bgm.id}" target="_blank" rel="noopener">bgm转接 ↗</a></span>`;
 }
+let _epsWarm=false;
+async function warmEps(){
+ _epsWarm=true;
+ const act=DATA.filter(it=>["在追","优先追番"].includes(getStatus(it))&&it.bgm&&it.bgm.id&&!DETAIL_CACHE[it.bgm.id]).slice(0,12);
+ for(let i=0;i<act.length;i+=3){
+  await Promise.all(act.slice(i,i+3).map(it=>getDetail(it.bgm.id).catch(()=>null)));
+ }
+ if(!document.querySelector("#grid input:focus,#grid select:focus"))renderCards();
+}
 function renderCards(){
  const list=sortList(DATA.filter(pass));
  $("cnt").textContent=`显示 ${list.length} / ${DATA.length} 部`;
@@ -288,8 +297,16 @@ function renderCards(){
      <select class="st">${STATUS.map(s=>`<option ${s===st?"selected":""}>${s}</option>`).join("")}</select>
      <input class="mm" placeholder="我的观感/一句话…" value="${(getMemo(it)||"").replace(/"/g,"&quot;")}">
     </div>
+    <div class="ctrl" style="margin-top:8px;align-items:center;flex-wrap:wrap">
+     <span style="font-size:12.5px;color:var(--mut)">▶ 看到第 <b style="color:var(--accent)">${PROG[it.id]||0}</b>${epsOf(it)?"/"+epsOf(it):""} 话</span>
+     <button class="wbtn" onclick="bumpProg('${it.id}',1)">＋1</button>
+     <button class="wbtn" onclick="bumpProg('${it.id}',-1)">−</button>
+     ${(it.bgm&&it.bgm.id&&SERIES[String(it.bgm.id)])?seriesRow(SERIES[String(it.bgm.id)]):
+       (it.bgm&&it.bgm.id?`<button class="wbtn" onclick="findSeries('${it.bgm.id}')">🔗 查系列</button>`:"")}
+    </div>
    </div>
   </article>`;}).join("");
+ if(!_epsWarm)warmEps();
  document.querySelectorAll("#grid .st").forEach(el=>el.onchange=e=>{setStatus(DATA.find(d=>d.id==e.target.closest(".card").dataset.id),e.target.value);if($("f-status").value)renderCards();});
  document.querySelectorAll("#grid .mm").forEach(el=>el.onchange=e=>{setMemo(DATA.find(d=>d.id==e.target.closest(".card").dataset.id),e.target.value);});
  document.querySelectorAll("#grid .tag").forEach(el=>el.onclick=e=>{$("kw").value=e.target.dataset.kw;renderAll();});
@@ -466,40 +483,120 @@ async function loadDetail(sid){
   box.querySelectorAll(".tag").forEach(el=>el.onclick=()=>{$("s-tag").value=el.dataset.tag;$("s-kw").value="";doSearch(true);});
  }catch(e){box.innerHTML=`<span style="color:#c0392b">详情加载失败：${e&&e.message}（用桌面启动器打开有内置代理）</span>`;}
 }
+let PROG={};try{PROG=JSON.parse(localStorage.getItem("jj_prog_v1")||"{}");}catch(e){}
+let SERIES={};try{SERIES=JSON.parse(localStorage.getItem("jj_series_v1")||"{}");}catch(e){}
+function bumpProg(id,d){
+ const cur=PROG[id]||0;PROG[id]=Math.max(0,cur+d);
+ try{localStorage.setItem("jj_prog_v1",JSON.stringify(PROG));queueStateSave();}catch(e){}
+ renderCards();
+}
+function epsOf(it){
+ const d=it&&it.bgm&&it.bgm.id&&DETAIL_CACHE[it.bgm.id];
+ return (d&&d.eps)||null;
+}
+function seriesRow(members){
+ return `<span style="display:inline-flex;gap:4px;align-items:center;vertical-align:middle;margin-left:8px"><span style="color:var(--mut);font-size:12px">系列：</span>`+
+  members.slice(0,10).map(m=>{
+   const inLib=DATA.some(d=>d.bgm&&String(d.bgm.id)===String(m.id));
+   return `<a href="https://bgm.tv/subject/${m.id}" target="_blank" rel="noopener" title="${(m.title||m.id)+(inLib?" · 已在库":"")}" style="display:inline-block;width:26px;height:36px;border-radius:4px;overflow:hidden;background:#eceef4;opacity:${inLib?1:.55}">${m.img?`<img loading="lazy" decoding="async" src="${m.img}" style="width:100%;height:100%;object-fit:cover">`:""}</a>`;
+  }).join("")+`</span>`;
+}
+async function findSeries(bid){
+ try{
+  const members=await seriesClosure(bid);
+  const self={id:String(bid),img:((DETAIL_CACHE[bid]&&DETAIL_CACHE[bid].images)&&(DETAIL_CACHE[bid].images.medium||DETAIL_CACHE[bid].images.small))||null,title:""};
+  const all=[self,...members.map(m=>({id:String(m.id),img:(m.images&&(m.images.medium||m.images.small))||null,title:m.name_cn||m.name}))];
+  for(const x of all){SERIES[x.id]=all.filter(y=>y.id!==x.id);}
+  try{localStorage.setItem("jj_series_v1",JSON.stringify(SERIES));queueStateSave();}catch(e){}
+  renderCards();
+ }catch(e){}
+}
+const SERIES_CACHE={};
+async function getSeries(id){
+ if(SERIES_CACHE[id])return SERIES_CACHE[id];
+ const rel=await bgmFetch(`/v0/subjects/${id}/subjects`,"GET");
+ const list=(rel||[]).filter(m=>m.type===2);
+ SERIES_CACHE[id]=list;return list;
+}
+async function seriesClosure(seedId){
+ const seen=new Set([String(seedId)]); let frontier=[String(seedId)]; const members=[];
+ for(let depth=0;depth<2&&frontier.length&&members.length<12;depth++){
+  const next=[];
+  for(const fid of frontier){
+   let rel=[];
+   try{rel=await getSeries(fid);}catch(e){continue;}
+   for(const m of rel){
+    const mid=String(m.id);
+    if(seen.has(mid))continue;
+    seen.add(mid); members.push(m); next.push(mid);
+    if(members.length>=12)break;
+   }
+   if(members.length>=12)break;
+  }
+  frontier=next;
+ }
+ return members;
+}
+function entryFromDetail(sid,d){
+ const ib={};for(const x of (d.infobox||[])){ib[x.key]=Array.isArray(x.value)?x.value.map(v=>v.v||v).join(" / "):x.value;}
+ const META=/^(19|20)\d{2}$|^\d{4}年$|^(TV|TVA|OVA|OAD|剧场版|WEB|日本|中国|美国|韩国|原创|全年龄)$|^\d{1,2}月$|改$|动画|制作|[Ss]tudio/;
+ const genres=(d.tags||[]).map(t=>t.name).filter(t=>!META.test(t)&&t.length<=8).slice(0,8).join(" · ");
+ const mo=parseInt((d.date||"").slice(5,7),10);
+ const season=(!mo||isNaN(mo))?"待补":["冬季","冬季","冬季","春季","春季","春季","夏季","夏季","夏季","秋季","秋季","秋季"][mo-1];
+ const studio=ib["动画制作"]||ib["制作"]||ib["制作方"]||"待补";
+ return {
+  id:"s"+sid, season:season, title:d.name_cn||d.name, source:"bgm在线搜索入库",
+  genres:genres||"待补",
+  premiere:d.date?(parseInt(d.date.slice(5,7),10)+"/"+parseInt(d.date.slice(8,10),10)):"待定",
+  studio:studio, protagonist_type:"待补", emotion:"无", fit:"待评", ai_fit:0,
+  pov1:"否", pov1_note:"在线入库未判定", note:"",
+  synopsis:(d.summary||"（简介抓取为空，可去bgm补）").replace(/</g,"&lt;"),
+  bgm:{id:Number(sid),score:(d.rating&&d.rating.score)||null,rank:null,
+       tags:(d.tags||[]).map(t=>t.name),name:d.name,matched:true},
+  img:(d.images&&(d.images.medium||d.images.large))||null
+ };
+}
+function persistAdded(entry){
+ ADDED.push(entry);
+ try{localStorage.setItem("jj_added_v1",JSON.stringify(ADDED));queueStateSave();}catch(e){}
+ DATA.push(entry);
+}
+async function chainAdd(sid){
+ try{
+  const members=await seriesClosure(sid);
+  if(!members.length)return 0;
+  const all=[{id:String(sid),img:null,title:""},...members.map(m=>({id:String(m.id),img:(m.images&&(m.images.medium||m.images.small))||null,title:m.name_cn||m.name}))];
+  for(const x of all){SERIES[x.id]=all.filter(y=>y.id!==x.id);}
+  try{localStorage.setItem("jj_series_v1",JSON.stringify(SERIES));queueStateSave();}catch(e){}
+  let added=0;
+  for(const m of members){
+   if(DATA.some(d=>d.bgm&&String(d.bgm.id)===String(m.id)))continue;
+   try{const d=await getDetail(m.id);persistAdded(entryFromDetail(m.id,d));added++;}catch(e){}
+  }
+  if(added)renderAll();
+  return added;
+ }catch(e){return 0;}
+}
 async function directAdd(sid, btn){
  if(DATA.some(d=>d.bgm&&String(d.bgm.id)===String(sid))){btn.textContent="✓ 已在库";btn.classList.add("on");btn.disabled=true;return;}
  btn.disabled=true;btn.textContent="入库中…(抓详情)";
  try{
   const d=await getDetail(sid);
-  const ib={};for(const x of (d.infobox||[])){ib[x.key]=Array.isArray(x.value)?x.value.map(v=>v.v||v).join(" / "):x.value;}
-  const META=/^(19|20)\d{2}$|^\d{4}年$|^(TV|TVA|OVA|OAD|剧场版|WEB|日本|中国|美国|韩国|原创|全年龄)$|^\d{1,2}月$|改$|动画|制作|[Ss]tudio/;
-  const genres=(d.tags||[]).map(t=>t.name).filter(t=>!META.test(t)&&t.length<=8).slice(0,8).join(" · ");
-  const mo=parseInt((d.date||"").slice(5,7),10);
-  const season=(!mo||isNaN(mo))?"待补":["冬季","冬季","冬季","春季","春季","春季","夏季","夏季","夏季","秋季","秋季","秋季"][mo-1];
-  const studio=ib["动画制作"]||ib["制作"]||ib["制作方"]||"待补";
-  const entry={
-   id:"s"+sid, season:season, title:d.name_cn||d.name, source:"bgm在线搜索入库",
-   genres:genres||"待补",
-   premiere:d.date?(parseInt(d.date.slice(5,7),10)+"/"+parseInt(d.date.slice(8,10),10)):"待定",
-   studio:studio, protagonist_type:"待补", emotion:"无", fit:"待评", ai_fit:0,
-   pov1:"否", pov1_note:"在线入库未判定", note:"",
-   synopsis:(d.summary||"（简介抓取为空，可去bgm补）").replace(/</g,"&lt;"),
-   bgm:{id:Number(sid),score:(d.rating&&d.rating.score)||null,rank:null,
-        tags:(d.tags||[]).map(t=>t.name),name:d.name,matched:true},
-   img:(d.images&&(d.images.medium||d.images.large))||null
-  };
-  ADDED.push(entry);
-  try{localStorage.setItem("jj_added_v1",JSON.stringify(ADDED));queueStateSave();}catch(e){}
-  DATA.push(entry);
+  persistAdded(entryFromDetail(sid,d));
   renderStats();
   btn.textContent="✓ 已入库 · 卡墙可见";btn.classList.add("on");
+  const n=await chainAdd(sid);
+  btn.textContent=n?`✓ 已入库 · 连同系列 ${n} 部`:"✓ 已入库 · 卡墙可见";
  }catch(e){
   btn.disabled=false;btn.textContent="入库失败，重试";
  }
 }
 function renderSearch(){
  const list=sSorted();
- $("sres").innerHTML=list.map(sCard).join("");
+ const cap=S.showN||80, shown=list.slice(0,cap);
+ $("sres").innerHTML=shown.map(sCard).join("")+
+  (list.length>cap?`<div style="text-align:center;margin:12px"><button class="wbtn" id="s-showmore">再显示 ${Math.min(100,list.length-cap)} 条（已过滤共 ${list.length} 条）</button></div>`:"");
+ if(list.length>cap&&$("s-showmore"))$("s-showmore").onclick=()=>{S.showN=(S.showN||80)+100;renderSearch();};
  document.querySelectorAll("#sres .sdet").forEach(b=>b.onclick=()=>loadDetail(b.dataset.sid));
  document.querySelectorAll("#sres .sadd").forEach(b=>b.onclick=()=>directAdd(b.dataset.sid,b));
  $("s-more").classList.toggle("hidden",S.done||S.items.length===0);
@@ -521,10 +618,35 @@ async function getDetail(id){
  DETAIL_CACHE[id]=d;return d;
 }
 async function hydrateIds(ids){
- for(let i=0;i<ids.length;i+=6){
-  const rs=await Promise.all(ids.slice(i,i+6).map(id=>getDetail(id).catch(()=>null)));
-  for(const d of rs){if(d)S.items.push(d);}
+ for(let i=0;i<ids.length;i+=8){
+  const rs=await Promise.all(ids.slice(i,i+8).map(id=>getDetail(id).catch(()=>null)));
+  for(const d of rs){
+   if(!d)continue;
+   const j=S.items.findIndex(x=>String(x.id)===String(d.id));
+   if(j>=0)S.items[j]=d; else S.items.push(d);
+  }
+  renderSearch();
  }
+}
+function parseLightRows(html){
+ const out=[];
+ for(const m of html.matchAll(/<li id="item_(\d+)"[\s\S]*?(?=<li id="item_|$)/g)){
+  const blk=m[0], id=m[1];
+  const text=blk.replace(/<[^>]+>/g," ").replace(/\s+/g," ");
+  const img=(blk.match(/<img[^>]+src="([^"]+)"/)||[])[1]||"";
+  const cn=(blk.match(/<a[^>]*class="l"[^>]*>([^<]+)<\/a>/)||[])[1]||"";
+  const ja=(blk.match(/<\/a>\s*<small[^>]*>([^<]+)<\/small>/)||[])[1]||"";
+  const dt=text.match(/((?:19|20)\d{2})年(\d{1,2})月(\d{1,2})日/);
+  const eps=(text.match(/(\d+)话/)||[])[1];
+  const sc=text.match(/(\d\.\d)\s*\((\d+)人评分\)/);
+  const src=img?(img.startsWith("//")?"https:"+img:img):"";
+  out.push({id:id,name_cn:cn,name:ja,
+   date:dt?`${dt[1]}-${String(dt[2]).padStart(2,"0")}-${String(dt[3]).padStart(2,"0")}`:null,
+   images:src?{small:src,medium:src}:null,
+   rating:sc?{score:parseFloat(sc[1]),total:parseInt(sc[2],10)}:{score:null,total:0},
+   eps:eps?parseInt(eps,10):null});
+ }
+ return out;
 }
 async function loadTagPage(page,depthOnly){
  if(!S.seen)S.seen=new Set();
@@ -534,18 +656,16 @@ async function loadTagPage(page,depthOnly){
  if(pmax>(S.totalPages||0))S.totalPages=pmax;
  if(depthOnly)return false;
  S.lastHasDated=/((?:19|20)\d{2}年\d{1,2}月\d{1,2}日)/.test(html);
- const ids=[...html.matchAll(/id="item_(\d+)"/g)].map(m=>m[1]);
- const fresh=ids.filter(id=>!S.seen.has(id));
+ const lights=parseLightRows(html);
+ const fresh=lights.filter(x=>!S.seen.has(String(x.id)));
  if(!fresh.length){
   if(S.dir!==-1)S.done=true;
   return true;
  }
- fresh.forEach(id=>S.seen.add(id));
- if(S.sortParam==="sort=date"&&S.dir===-1&&!S.lastHasDated){
-  S.deferred.push(...fresh);
- }else{
-  await hydrateIds(fresh);
- }
+ fresh.forEach(x=>S.seen.add(String(x.id)));
+ S.items.push(...fresh);
+ renderSearch();
+ hydrateIds(fresh.map(x=>x.id)).catch(()=>{});
  if(S.dir===-1){if(page<=1)S.done=true;}
  else if(S.totalPages&&page>=S.totalPages)S.done=true;
  return false;
@@ -558,7 +678,7 @@ async function doSearch(reset){
   const map={def:["",1],date:["sort=date",1],datea:["sort=date",-1],score:["sort=rank",1],scorea:["sort=rank",-1]};
   const mm=map[sm]||["",1];
   S={offset:0,items:[],tag:tag||null,kw:tag?"":kw,year:$("s-year").value,done:false,page:1,
-     seen:new Set(),totalPages:0,apiTotal:0,sortParam:mm[0],dir:mm[1],revInit:false,deferred:[]};
+     seen:new Set(),totalPages:0,apiTotal:0,sortParam:mm[0],dir:mm[1],revInit:false,showN:80};
   $("sres").innerHTML="";
  }
  $("s-go").disabled=true;$("s-go").textContent="搜索中…";
@@ -602,11 +722,8 @@ async function doSearch(reset){
     if(S.year==="更早")f=arr.filter(x=>x.date&&x.date<"2015");
     else if(S.year)f=arr.filter(x=>(x.date||"").startsWith(S.year));
     S.items.push(...f);
+    renderSearch();
    }
-  }
-  if(S.tag&&S.done&&S.deferred&&S.deferred.length){
-   const d=S.deferred;S.deferred=[];
-   await hydrateIds(d);
   }
   renderSearch();
  }catch(e){
